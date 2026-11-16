@@ -41,7 +41,7 @@ test("run reports a page Bing forgot and keeps the Google result next to it", as
     verdict: "PASS",
     bing: { checkedAt: "2026-11-01", discovered: "2026-09-01T00:00:00.000Z", lastCrawled: "2026-10-01T00:00:00.000Z" },
   };
-  const gsc = { site: "sc-domain:x.com", listSitemaps: async () => [{ path: "https://x.com/sitemap.xml", lastDownloaded: new Date().toISOString() }], inspect: async () => ({}) };
+  const gsc = { site: "sc-domain:x.com", listSitemaps: async () => [{ path: "https://x.com/sitemap.xml", lastDownloaded: new Date().toISOString() }], inspect: async () => ({}), pageImpressions: async () => new Map() };
   const bing = { site: "https://x.com/", feeds: async () => [], urlInfo: async () => ({ discovered: null, lastCrawled: null }) };
   const fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from("<urlset><url><loc>https://x.com/a</loc></url></urlset>") });
 
@@ -51,4 +51,20 @@ test("run reports a page Bing forgot and keeps the Google result next to it", as
   assert.deepEqual(result.bing.unknown, ["https://x.com/a"]);
   assert.equal(state.urls["https://x.com/a"].verdict, "PASS");
   assert.equal(result.bing.problems[0].problem, "no sitemap submitted to Bing Webmaster Tools");
+});
+
+test("run sends pages Bing has not seen to IndexNow once a week, not every run", async () => {
+  const state = emptyState("sc-domain:x.com");
+  const gsc = { site: "sc-domain:x.com", listSitemaps: async () => [], inspect: async () => ({}), pageImpressions: async () => new Map() };
+  const bing = { site: "https://x.com/", feeds: async () => [], urlInfo: async () => ({ discovered: null, lastCrawled: null }) };
+  const sitemap = async () => ({ ok: true, arrayBuffer: async () => Buffer.from("<urlset><url><loc>https://x.com/a</loc></url></urlset>") });
+  const posts = [];
+  const indexnow = { key: "k", fetch: async (url, options) => (posts.push(JSON.parse(options.body)), { ok: true, status: 202 }) };
+
+  const first = await run({ gsc, bing, state, sitemaps: ["https://x.com/sitemap.xml"], budget: 0, bingSpacingMs: 0, fetch: sitemap, indexnow });
+  const second = await run({ gsc, bing, state, sitemaps: ["https://x.com/sitemap.xml"], budget: 0, bingSpacingMs: 0, fetch: sitemap, indexnow });
+
+  assert.deepEqual(first.indexnow.submitted, ["https://x.com/a"]);
+  assert.deepEqual(posts, [{ host: "x.com", key: "k", urlList: ["https://x.com/a"] }]);
+  assert.deepEqual(second.indexnow.submitted, []);
 });

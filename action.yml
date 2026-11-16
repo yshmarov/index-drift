@@ -36,6 +36,14 @@ inputs:
     description: URLs to check in Bing in this run. Bing allows about 10 a minute.
     required: false
     default: "100"
+  indexnow-key:
+    description: IndexNow key, hosted at https://<host>/<key>.txt. With bing-key, sends pages Bing is missing to IndexNow.
+    required: false
+    default: ""
+  skip-impressions:
+    description: Do not look up which indexed pages got zero impressions in 90 days.
+    required: false
+    default: "false"
   fail-on-drop:
     description: Fail the step when a URL dropped out of the Google index, or Bing forgot it.
     required: false
@@ -57,6 +65,12 @@ outputs:
   checked:
     description: URLs with a saved inspection result
     value: ${{ steps.run.outputs.checked }}
+  invisible:
+    description: Indexed URLs with zero impressions in the last 90 days
+    value: ${{ steps.run.outputs.invisible }}
+  indexnow-submitted:
+    description: URLs sent to IndexNow
+    value: ${{ steps.run.outputs.indexnow-submitted }}
   bing-unknown:
     description: URLs Bing has never seen
     value: ${{ steps.run.outputs.bing-unknown }}
@@ -85,6 +99,8 @@ runs:
         BING_WEBMASTER_API_KEY: ${{ inputs.bing-key }}
         INPUT_BING_SITE: ${{ inputs.bing-site }}
         INPUT_BING_BUDGET: ${{ inputs.bing-budget }}
+        INDEXNOW_KEY: ${{ inputs.indexnow-key }}
+        INPUT_SKIP_IMPRESSIONS: ${{ inputs.skip-impressions }}
       run: |
         report="$RUNNER_TEMP/index-drift.md"
         args=(--site "$INPUT_SITE" --budget "$INPUT_BUDGET" --report "$report")
@@ -93,6 +109,7 @@ runs:
         if [ "$INPUT_FAIL_ON_DROP" = "true" ]; then args+=(--fail-on-drop); fi
         if [ -n "$BING_WEBMASTER_API_KEY" ]; then args+=(--bing --bing-budget "$INPUT_BING_BUDGET"); fi
         if [ -n "$INPUT_BING_SITE" ]; then args+=(--bing-site "$INPUT_BING_SITE"); fi
+        if [ "$INPUT_SKIP_IMPRESSIONS" = "true" ]; then args+=(--skip-impressions); fi
 
         status=0
         node "$GITHUB_ACTION_PATH/bin/index-drift.js" "${args[@]}" || status=$?

@@ -25,6 +25,9 @@ export function sections(result, { limit = 10 } = {}) {
   if (folded.length) {
     out.push({ title: "Folded into another locale", warn: true, items: folded.map((o) => `${o.url} → ${o.googleCanonical}`) });
   }
+  if (result.impressions?.invisible.length) {
+    out.push({ title: `Indexed, but zero impressions from ${result.impressions.startDate} to ${result.impressions.endDate}`, items: result.impressions.invisible });
+  }
   if (otherCanonical.length) {
     out.push({ title: "Google chose a different canonical", items: otherCanonical.map((o) => `${o.url} → ${o.googleCanonical}`) });
   }
@@ -52,6 +55,10 @@ function bingSections(result) {
     });
   }
   if (bing.errors.length) out.push({ title: "Bing: errors", warn: true, items: bing.errors.map((e) => `${e.url}: ${e.error}`) });
+  for (const response of result.indexnow?.responses.filter((r) => !r.ok) ?? []) {
+    out.push({ title: "IndexNow: submission failed", warn: true, items: [`${response.host}: ${response.error} (${response.count} URLs not sent)`] });
+  }
+  if (result.indexnow?.submitted.length) out.push({ title: "Sent to IndexNow", items: result.indexnow.submitted });
   return out;
 }
 
@@ -60,7 +67,7 @@ export function headline(result) {
   const cycle = result.budget > 0 ? Math.ceil(result.total / result.budget) : null;
   const lines = [
     `${fmt(result.total)} URLs in sitemaps · ${fmt(result.indexed)} of ${fmt(result.checked)} checked are indexed (${pct}%)`,
-    `Inspected ${fmt(result.inspected)} this run${result.quotaHit ? " · stopped at the daily quota" : ""}` +
+    `Inspected ${fmt(result.inspected)} this run${result.quotaHit ? " · stopped at the daily quota" : ""}${result.stoppedOnErrors ? " · stopped after 10 errors in a row" : ""}` +
       (result.unchecked ? ` · ${fmt(result.unchecked)} not checked yet` : "") +
       (cycle > 1 ? ` · full pass every ${cycle} runs` : ""),
   ];
@@ -68,8 +75,14 @@ export function headline(result) {
     const bing = result.bing;
     lines.push(
       `Bing (${bing.site}): ${fmt(bing.crawled)} of ${fmt(bing.checked)} checked were crawled · ${fmt(bing.unknown.length)} never seen` +
-        ` · checked ${fmt(bing.inspected)} this run${bing.quotaHit ? " · stopped at the Bing quota" : ""}`,
+        ` · checked ${fmt(bing.inspected)} this run${bing.quotaHit ? " · stopped at the Bing quota" : ""}${bing.stoppedOnErrors ? " · stopped after 10 errors in a row" : ""}`,
     );
+  }
+  if (result.impressions?.error) lines.push(`Impressions not checked: ${result.impressions.error}`);
+  else if (result.impressions) {
+    const invisible = result.impressions.invisible.length;
+    const share = result.indexed ? Math.round((invisible / result.indexed) * 100) : 0;
+    lines.push(`${fmt(invisible)} of ${fmt(result.indexed)} indexed pages (${share}%) got zero impressions in the last 90 days`);
   }
   if (result.removed) lines.push(`${fmt(result.removed)} URLs left the sitemaps since the last run`);
   return lines;

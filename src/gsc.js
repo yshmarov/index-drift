@@ -33,6 +33,19 @@ export class SearchConsole {
     return body.inspectionResult?.indexStatusResult ?? {};
   }
 
+  // Search Analytics reports the canonical Google shows, keyed by page. 25,000 rows per request.
+  async pageImpressions({ startDate, endDate }) {
+    const pages = new Map();
+    for (let startRow = 0; ; startRow += 25_000) {
+      const body = await this.#request(`${SITES_URL}/${encodeURIComponent(this.site)}/searchAnalytics/query`, {
+        method: "POST",
+        body: JSON.stringify({ startDate, endDate, dimensions: ["page"], rowLimit: 25_000, startRow }),
+      });
+      for (const row of body.rows ?? []) pages.set(row.keys[0], { clicks: row.clicks, impressions: row.impressions });
+      if ((body.rows ?? []).length < 25_000) return pages;
+    }
+  }
+
   async #sitemapList(sitemapIndex) {
     const query = sitemapIndex ? `?sitemapIndex=${encodeURIComponent(sitemapIndex)}` : "";
     const body = await this.#request(`${SITES_URL}/${encodeURIComponent(this.site)}/sitemaps${query}`);

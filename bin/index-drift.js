@@ -20,7 +20,7 @@ saves the result, and reports what changed since the last run.
                         Use 0 to only check sitemap health
   --concurrency <n>     Parallel inspections. Default: 5
   --report <file>       Also write a Markdown report (for GitHub issues and job summaries)
-  --json <file>         Also write the full result as JSON
+  --json <file>         Also write the full result as JSON. Use - to print only JSON to stdout
   --limit <n>           URLs shown per section in the terminal. Default: 10
   --language <code>     Language of Google's messages, e.g. en-US. Default: en-US
   --credentials <file>  Service account key. Default: GOOGLE_APPLICATION_CREDENTIALS or GSC_CREDENTIALS (JSON)
@@ -28,6 +28,10 @@ saves the result, and reports what changed since the last run.
   --bing                Also check each URL in Bing Webmaster Tools (key in BING_WEBMASTER_API_KEY)
   --bing-site <url>     Bing site URL. Default: https://<domain>/ from --site
   --bing-budget <n>     URLs to check in Bing this run (Bing allows about 10 a minute). Default: 100
+  --indexnow-key <key>  With --bing: send pages Bing has not seen, or not crawled in 30+ days, to IndexNow
+                        (Bing, Yandex, Seznam, Naver; not Google). Or set INDEXNOW_KEY
+  --indexnow-key-location <url>  Key file URL, if it is not at https://<host>/<key>.txt
+  --skip-impressions    Do not look up which indexed pages got zero impressions in 90 days
   -h, --help            Show this help
   -v, --version         Show the version
 `;
@@ -49,6 +53,9 @@ async function main() {
       bing: { type: "boolean", default: false },
       "bing-site": { type: "string" },
       "bing-budget": { type: "string", default: "100" },
+      "indexnow-key": { type: "string" },
+      "indexnow-key-location": { type: "string" },
+      "skip-impressions": { type: "boolean", default: false },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
@@ -76,30 +83,45 @@ async function main() {
   let bing;
   if (values.bing) {
     const apiKey = process.env.BING_WEBMASTER_API_KEY?.trim();
-    if (!apiKey) throw new Error("--bing needs the BING_WEBMASTER_API_KEY environment variable (Bing Webmaster Tools → Settings → API access).");
+    if (!apiKey)
+      throw new Error("--bing needs the BING_WEBMASTER_API_KEY environment variable (Bing Webmaster Tools → Settings → API access).");
     bing = new BingWebmaster({ apiKey, site: values["bing-site"] || bingSiteFor(site) });
   }
+
+  const indexnowKey = values["indexnow-key"] || process.env.INDEXNOW_KEY?.trim();
+  if (indexnowKey && !bing)
+    throw new Error("IndexNow needs --bing: index-drift submits the pages Bing has not seen or has not crawled lately.");
+  const indexnow = indexnowKey ? { key: indexnowKey, keyLocation: values["indexnow-key-location"] } : undefined;
+
   const progress = process.stderr.isTTY
     ? (done, total, engine) => process.stderr.write(`\r\x1b[K${engine}: ${done}/${total}`)
     : (done, total, engine) => done % 100 === 0 && process.stderr.write(`${engine}: ${done}/${total}\n`);
 
-  const result = await run({
-    checkpoint: () => saveState(statePath, state),
-    gsc,
-    state,
-    bing,
-    sitemaps,
-    budget,
-    bingBudget: integer(values["bing-budget"], "--bing-budget"),
-    concurrency: integer(values.concurrency, "--concurrency"),
-    languageCode: values.language,
-    onProgress: progress,
-  });
+  let result;
+  try {
+    result = await run({
+      checkpoint: () => saveState(statePath, state),
+      gsc,
+      state,
+      bing,
+      sitemaps,
+      budget,
+      bingBudget: integer(values["bing-budget"], "--bing-budget"),
+      concurrency: integer(values.concurrency, "--concurrency"),
+      languageCode: values.language,
+      onProgress: progress,
+      impressions: !values["skip-impressions"],
+      indexnow,
+    });
+  } finally {
+    // Keep finished checks even when the run fails part way.
+    await saveState(statePath, state);
+  }
   if (process.stderr.isTTY && (result.inspected || result.bing?.inspected)) process.stderr.write("\r\x1b[K");
 
-  await saveState(statePath, state);
   if (values.report) await writeFile(values.report, markdownReport(result));
-  if (values.json) await writeFile(values.json, `${JSON.stringify(result, null, 2)}\n`);
+  const json = `${JSON.stringify(result, null, 2)}\n`;
+  if (values.json && values.json !== "-") await writeFile(values.json, json);
 
   const dropped = result.changes.filter((c) => c.type === "dropped" || c.type === "bingForgot").length;
   if (process.env.GITHUB_OUTPUT) {
@@ -107,12 +129,16 @@ async function main() {
     await appendFile(
       process.env.GITHUB_OUTPUT,
       `dropped=${dropped}\nsitemap-problems=${result.sitemapProblems.length}\nfolded=${folded}\nindexed=${result.indexed}\nchecked=${result.checked}\nstate=${statePath}\n` +
-        `bing-unknown=${result.bing?.unknown.length ?? 0}\nbing-problems=${result.bing?.problems.length ?? 0}\n`,
+        `bing-unknown=${result.bing?.unknown.length ?? 0}\nbing-problems=${result.bing?.problems.length ?? 0}\n` +
+        `invisible=${result.impressions?.invisible.length ?? 0}\nindexnow-submitted=${result.indexnow?.submitted.length ?? 0}\n`,
     );
   }
 
-  console.log(terminalReport(result, { limit: integer(values.limit, "--limit"), color: process.stdout.isTTY }));
-  console.log(`State saved to ${statePath}`);
+  if (values.json === "-") process.stdout.write(json);
+  else {
+    console.log(terminalReport(result, { limit: integer(values.limit, "--limit"), color: process.stdout.isTTY }));
+    console.log(`State saved to ${statePath}`);
+  }
   return values["fail-on-drop"] && dropped ? 2 : 0;
 }
 

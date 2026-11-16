@@ -26,6 +26,8 @@ jobs:
           credentials: ${{ secrets.GSC_CREDENTIALS }}
           # Optional: also check Bing, the index ChatGPT search and Copilot use.
           # bing-key: ${{ secrets.BING_WEBMASTER_API_KEY }}
+          # Optional, with bing-key: send pages Bing is missing to IndexNow.
+          # indexnow-key: ${{ secrets.INDEXNOW_KEY }}
 
       - name: Save results
         run: |

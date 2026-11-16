@@ -145,3 +145,36 @@ export function bingFeedProblems(feeds, now, { staleDays = 30 } = {}) {
   }
   return problems;
 }
+
+// Indexed pages with no Search Analytics row had zero impressions in the window. Search Analytics keys
+// rows by the URL Google shows, which can differ from the sitemap URL by a trailing slash.
+export function invisiblePages(urls, state, pages) {
+  const seen = (url) => pages.has(url) || pages.has(url.endsWith("/") ? url.slice(0, -1) : `${url}/`);
+  return urls.filter((url) => isIndexed(state.urls[url]) && !seen(url));
+}
+
+export function bingNeedsCrawl(urls, state, now, { staleDays = 30, resubmitDays = 7 } = {}) {
+  return urls.filter((url) => {
+    const bing = state.urls[url]?.bing;
+    if (!bing) return false;
+    if (bing.indexnowAt && now - Date.parse(bing.indexnowAt) < resubmitDays * DAY) return false;
+    return !bing.discovered || !bing.lastCrawled || now - Date.parse(bing.lastCrawled) >= staleDays * DAY;
+  });
+}
+
+export function historyEntry(result) {
+  const count = (type) => result.changes.filter((c) => c.type === type).length;
+  return {
+    date: result.date,
+    urls: result.total,
+    checked: result.checked,
+    indexed: result.indexed,
+    dropped: count("dropped"),
+    newlyIndexed: count("indexed"),
+    folded: result.overrides.filter((o) => o.otherLocale).length,
+    sitemapProblems: result.sitemapProblems.length,
+    ...(result.impressions && { invisible: result.impressions.invisible.length }),
+    ...(result.bing && { bing: { checked: result.bing.checked, crawled: result.bing.crawled, unknown: result.bing.unknown.length, forgot: count("bingForgot") } }),
+    ...(result.indexnow && { indexnowSubmitted: result.indexnow.submitted.length }),
+  };
+}

@@ -14,6 +14,7 @@ function fakeGsc(results, { quotaAfter = Infinity } = {}) {
   return {
     site: "sc-domain:x.com",
     listSitemaps: async () => [{ path: "https://x.com/sitemap.xml", isPending: false, lastDownloaded: new Date().toISOString() }],
+    pageImpressions: async () => new Map([["https://x.com/b", { clicks: 1, impressions: 10 }]]),
     inspect: async (url) => {
       if (++calls > quotaAfter) throw new QuotaExhausted("Quota exceeded");
       return results[url] ?? { verdict: "PASS", coverageState: "Submitted and indexed" };
@@ -79,4 +80,40 @@ test("run keeps saved URLs when a sitemap could not be read", async () => {
   assert.equal(result.removed, 0);
   assert.deepEqual(Object.keys(state.urls), ["https://x.com/kept"]);
   assert.match(result.sitemapProblems[0].problem, /could not fetch \(HTTP 503\)/);
+});
+
+test("run lists indexed pages with no impressions and records one history entry per day", async () => {
+  const state = emptyState("sc-domain:x.com");
+  const fetch = sitemapFetch(["https://x.com/a/", "https://x.com/b/"]);
+  const now = new Date("2026-11-16T08:00:00Z");
+
+  await run({ gsc: fakeGsc({}), state, fetch, now });
+  const result = await run({ gsc: fakeGsc({}), state, fetch, now });
+
+  assert.deepEqual(result.impressions.invisible, ["https://x.com/a/"]);
+  assert.deepEqual([result.impressions.startDate, result.impressions.endDate], ["2026-08-16", "2026-11-13"]);
+  assert.equal(state.history.length, 1);
+  assert.equal(state.history[0].invisible, 1);
+});
+
+test("run stops a sweep after ten failures in a row and survives a Search Analytics outage", async () => {
+  const state = emptyState("sc-domain:x.com");
+  const urls = Array.from({ length: 30 }, (_, i) => `https://x.com/${i}`);
+  let calls = 0;
+  const gsc = {
+    ...fakeGsc({}),
+    inspect: async () => {
+      calls++;
+      throw new Error("fetch failed (ENOTFOUND)");
+    },
+    pageImpressions: async () => {
+      throw new Error("fetch failed (ENOTFOUND)");
+    },
+  };
+
+  const result = await run({ gsc, state, concurrency: 1, fetch: sitemapFetch(urls) });
+
+  assert.equal(calls, 10);
+  assert.equal(result.stoppedOnErrors, true);
+  assert.match(result.impressions.error, /^Search Analytics: fetch failed/);
 });

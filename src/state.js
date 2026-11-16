@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 const VERSION = 1;
 
 export function emptyState(site) {
-  return { version: VERSION, site, updatedAt: null, sitemaps: {}, urls: {} };
+  return { version: VERSION, site, updatedAt: null, history: [], sitemaps: {}, urls: {} };
 }
 
 export async function loadState(path, site) {
