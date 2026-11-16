@@ -31,9 +31,9 @@ export async function saveState(path, state) {
 
 // Never-checked URLs first, then the ones checked longest ago, so a site larger than the daily
 // quota is covered in full every ceil(urls / budget) runs.
-export function pickUrls(sitemapUrls, state, budget) {
+export function pickUrls(sitemapUrls, state, budget, checkedAt = (record) => record?.checkedAt) {
   return [...sitemapUrls]
-    .map((url, order) => ({ url, order, checkedAt: state.urls[url]?.checkedAt ?? "" }))
+    .map((url, order) => ({ url, order, checkedAt: checkedAt(state.urls[url]) ?? "" }))
     .sort((a, b) => a.checkedAt.localeCompare(b.checkedAt) || a.order - b.order)
     .slice(0, Math.max(0, budget))
     .map(({ url }) => url);

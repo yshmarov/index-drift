@@ -1,9 +1,9 @@
-import { fetchWithRetry, sleep as defaultSleep } from "./http.js";
+import { QuotaExhausted, fetchWithRetry, sleep as defaultSleep } from "./http.js";
 
 const INSPECT_URL = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect";
 const SITES_URL = "https://www.googleapis.com/webmasters/v3/sites";
 
-export class QuotaExhausted extends Error {}
+export { QuotaExhausted };
 
 export class SearchConsole {
   constructor({ token, site, fetch = globalThis.fetch, sleep = defaultSleep, retries = 3 }) {

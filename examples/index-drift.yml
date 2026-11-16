@@ -24,6 +24,8 @@ jobs:
         with:
           site: sc-domain:example.com
           credentials: ${{ secrets.GSC_CREDENTIALS }}
+          # Optional: also check Bing, the index ChatGPT search and Copilot use.
+          # bing-key: ${{ secrets.BING_WEBMASTER_API_KEY }}
 
       - name: Save results
         run: |

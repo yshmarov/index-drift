@@ -2,6 +2,7 @@
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { accessToken, loadCredentials } from "../src/auth.js";
+import { BingWebmaster, bingSiteFor } from "../src/bing.js";
 import { SearchConsole } from "../src/gsc.js";
 import { markdownReport, terminalReport } from "../src/report.js";
 import { run } from "../src/run.js";
@@ -23,7 +24,10 @@ saves the result, and reports what changed since the last run.
   --limit <n>           URLs shown per section in the terminal. Default: 10
   --language <code>     Language of Google's messages, e.g. en-US. Default: en-US
   --credentials <file>  Service account key. Default: GOOGLE_APPLICATION_CREDENTIALS or GSC_CREDENTIALS (JSON)
-  --fail-on-drop        Exit with code 2 when a URL dropped out of the index
+  --fail-on-drop        Exit with code 2 when a URL dropped out of the Google index, or Bing forgot it
+  --bing                Also check each URL in Bing Webmaster Tools (key in BING_WEBMASTER_API_KEY)
+  --bing-site <url>     Bing site URL. Default: https://<domain>/ from --site
+  --bing-budget <n>     URLs to check in Bing this run (Bing allows about 10 a minute). Default: 100
   -h, --help            Show this help
   -v, --version         Show the version
 `;
@@ -42,6 +46,9 @@ async function main() {
       language: { type: "string", default: "en-US" },
       credentials: { type: "string" },
       "fail-on-drop": { type: "boolean", default: false },
+      bing: { type: "boolean", default: false },
+      "bing-site": { type: "string" },
+      "bing-budget": { type: "string", default: "100" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
@@ -65,32 +72,42 @@ async function main() {
   const key = await loadCredentials({ file: values.credentials });
   const gsc = new SearchConsole({ token: await accessToken(key), site });
   const state = await loadState(statePath, site);
+
+  let bing;
+  if (values.bing) {
+    const apiKey = process.env.BING_WEBMASTER_API_KEY?.trim();
+    if (!apiKey) throw new Error("--bing needs the BING_WEBMASTER_API_KEY environment variable (Bing Webmaster Tools → Settings → API access).");
+    bing = new BingWebmaster({ apiKey, site: values["bing-site"] || bingSiteFor(site) });
+  }
   const progress = process.stderr.isTTY
-    ? (done, total) => process.stderr.write(`\rInspecting ${done}/${total}`)
-    : (done, total) => done % 100 === 0 && process.stderr.write(`Inspected ${done}/${total}\n`);
+    ? (done, total, engine) => process.stderr.write(`\r\x1b[K${engine}: ${done}/${total}`)
+    : (done, total, engine) => done % 100 === 0 && process.stderr.write(`${engine}: ${done}/${total}\n`);
 
   const result = await run({
     checkpoint: () => saveState(statePath, state),
     gsc,
     state,
+    bing,
     sitemaps,
     budget,
+    bingBudget: integer(values["bing-budget"], "--bing-budget"),
     concurrency: integer(values.concurrency, "--concurrency"),
     languageCode: values.language,
     onProgress: progress,
   });
-  if (process.stderr.isTTY && result.inspected) process.stderr.write("\r\x1b[K");
+  if (process.stderr.isTTY && (result.inspected || result.bing?.inspected)) process.stderr.write("\r\x1b[K");
 
   await saveState(statePath, state);
   if (values.report) await writeFile(values.report, markdownReport(result));
   if (values.json) await writeFile(values.json, `${JSON.stringify(result, null, 2)}\n`);
 
-  const dropped = result.changes.filter((c) => c.type === "dropped").length;
+  const dropped = result.changes.filter((c) => c.type === "dropped" || c.type === "bingForgot").length;
   if (process.env.GITHUB_OUTPUT) {
     const folded = result.overrides.filter((o) => o.otherLocale).length;
     await appendFile(
       process.env.GITHUB_OUTPUT,
-      `dropped=${dropped}\nsitemap-problems=${result.sitemapProblems.length}\nfolded=${folded}\nindexed=${result.indexed}\nchecked=${result.checked}\nstate=${statePath}\n`,
+      `dropped=${dropped}\nsitemap-problems=${result.sitemapProblems.length}\nfolded=${folded}\nindexed=${result.indexed}\nchecked=${result.checked}\nstate=${statePath}\n` +
+        `bing-unknown=${result.bing?.unknown.length ?? 0}\nbing-problems=${result.bing?.problems.length ?? 0}\n`,
     );
   }
 

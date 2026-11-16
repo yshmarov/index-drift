@@ -15,6 +15,7 @@ It finds:
 - **Other canonical overrides**: Google ignored your `rel=canonical`
 - **Sitemaps Google never read**: "pending" for days, never downloaded, or with errors
 - **Every page that is not indexed**, grouped by Google's reason ("Crawled - currently not indexed", "URL is unknown to Google", …)
+- **Optional Bing check**: pages Bing has never seen, has not crawled for 30+ days, or has forgotten. ChatGPT search and Copilot answer from Bing's index, so a page Bing does not have is a page they cannot cite.
 
 No dependencies. Node 20 or newer.
 
@@ -71,7 +72,10 @@ npx index-drift --site sc-domain:example.com
 --limit <n>           URLs shown per section in the terminal. Default: 10
 --language <code>     Language of Google's messages. Default: en-US
 --credentials <file>  Service account key. Default: GOOGLE_APPLICATION_CREDENTIALS, or the key JSON in GSC_CREDENTIALS
---fail-on-drop        Exit with code 2 when a URL dropped out of the index
+--fail-on-drop        Exit with code 2 when a URL dropped out of the Google index, or Bing forgot it
+--bing                Also check each URL in Bing Webmaster Tools (key in BING_WEBMASTER_API_KEY)
+--bing-site <url>     Bing site URL. Default: https://<domain>/ from --site
+--bing-budget <n>     URLs to check in Bing this run. Default: 100
 ```
 
 ## Large sites and the daily quota
@@ -79,6 +83,24 @@ npx index-drift --site sc-domain:example.com
 Google allows 2,000 inspections a day per property, and 600 a minute. index-drift spaces requests to stay under the per-minute limit. For the daily limit, it saves the time of each check and always inspects the URLs it checked longest ago, with new URLs first. A site with 6,000 URLs is checked in full every 3 days, and each day's run reports what changed in its part.
 
 When Google returns "quota exceeded", index-drift stops, saves what it has, and continues from there on the next run.
+
+## Bing
+
+```sh
+export BING_WEBMASTER_API_KEY=...   # Bing Webmaster Tools → Settings → API access
+npx index-drift --site sc-domain:example.com --bing
+```
+
+Bing's API has no "indexed" verdict like Google's. It gives the date Bing discovered a URL and the date it last crawled it. index-drift reports:
+
+- **Never seen**: Bing has no record of the URL
+- **Forgot**: Bing knew the URL at the last check and does not now
+- **Not crawled in 30+ days**
+- **Sitemap problems**: no sitemap submitted, a failed status, or a sitemap Bing has not read for 30+ days
+
+Bing throttles this API after about 10 calls a minute, so Bing checks run one at a time, 6 seconds apart. The default of 100 URLs a run takes about 10 minutes. Rotation works the same way as for Google: a 722-URL site gets a full Bing pass every 8 runs.
+
+If your Bing site is `https://www.example.com/`, pass `--bing-site https://www.example.com/`.
 
 ## Run it every day with GitHub Actions
 
@@ -94,7 +116,9 @@ Copy [`examples/index-drift.yml`](examples/index-drift.yml) to `.github/workflow
 
 The example workflow commits the state file after each run, so `git log -p .index-drift/` is the index history of your site. It opens one issue, and comments on it, when pages drop or a sitemap has a problem. The report also goes to the job summary.
 
-Action outputs: `dropped`, `sitemap-problems`, `folded`, `indexed`, `checked`, `state`, `report`.
+For the Bing check, add a `BING_WEBMASTER_API_KEY` secret and pass `bing-key: ${{ secrets.BING_WEBMASTER_API_KEY }}`. If the job runs longer than you want, lower `bing-budget`.
+
+Action outputs: `dropped`, `sitemap-problems`, `folded`, `indexed`, `checked`, `bing-unknown`, `bing-problems`, `state`, `report`.
 
 ## The state file
 
@@ -114,6 +138,8 @@ One JSON file per property, with sorted keys, so each run is a small, readable d
 }
 ```
 
+With `--bing`, each URL also gets a `bing` object with `checkedAt`, `discovered` and `lastCrawled`.
+
 URLs that leave your sitemaps are removed from the file.
 
 ## How locales are detected
@@ -122,7 +148,7 @@ A URL's locale is its first path segment (`/fr/`, `/pt-br/`) or its subdomain (`
 
 ## What it does not do
 
-It does not ask Google to index anything. Google supports the Indexing API only for job posting and livestream pages, runs spam checks on every submission, and can revoke access for misuse. index-drift only reads data. The scope it asks for is `webmasters.readonly`.
+It does not ask Google to index anything. Google supports the Indexing API only for job posting and livestream pages, runs spam checks on every submission, and can revoke access for misuse. index-drift only reads data. The Google scope it asks for is `webmasters.readonly`, and the Bing calls are read-only too.
 
 ## License
 

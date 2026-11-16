@@ -1,3 +1,5 @@
+export class QuotaExhausted extends Error {}
+
 const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // fetch() throws a bare "fetch failed" on resets and DNS blips. Retry those, and name the cause when giving up.

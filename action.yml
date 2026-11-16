@@ -24,8 +24,20 @@ inputs:
     description: URLs to inspect in this run. Google allows 2,000 a day per property.
     required: false
     default: "2000"
+  bing-key:
+    description: Bing Webmaster Tools API key. Set it to also check each URL in Bing.
+    required: false
+    default: ""
+  bing-site:
+    description: Bing site URL. Default is https://<domain>/ from site.
+    required: false
+    default: ""
+  bing-budget:
+    description: URLs to check in Bing in this run. Bing allows about 10 a minute.
+    required: false
+    default: "100"
   fail-on-drop:
-    description: Fail the step when a URL dropped out of the index.
+    description: Fail the step when a URL dropped out of the Google index, or Bing forgot it.
     required: false
     default: "false"
 
@@ -45,6 +57,12 @@ outputs:
   checked:
     description: URLs with a saved inspection result
     value: ${{ steps.run.outputs.checked }}
+  bing-unknown:
+    description: URLs Bing has never seen
+    value: ${{ steps.run.outputs.bing-unknown }}
+  bing-problems:
+    description: Number of Bing sitemap problems
+    value: ${{ steps.run.outputs.bing-problems }}
   state:
     description: Path of the state file
     value: ${{ steps.run.outputs.state }}
@@ -64,12 +82,17 @@ runs:
         INPUT_STATE: ${{ inputs.state }}
         INPUT_BUDGET: ${{ inputs.budget }}
         INPUT_FAIL_ON_DROP: ${{ inputs.fail-on-drop }}
+        BING_WEBMASTER_API_KEY: ${{ inputs.bing-key }}
+        INPUT_BING_SITE: ${{ inputs.bing-site }}
+        INPUT_BING_BUDGET: ${{ inputs.bing-budget }}
       run: |
         report="$RUNNER_TEMP/index-drift.md"
         args=(--site "$INPUT_SITE" --budget "$INPUT_BUDGET" --report "$report")
         if [ -n "$INPUT_STATE" ]; then args+=(--state "$INPUT_STATE"); fi
         for sitemap in $INPUT_SITEMAPS; do args+=(--sitemap "$sitemap"); done
         if [ "$INPUT_FAIL_ON_DROP" = "true" ]; then args+=(--fail-on-drop); fi
+        if [ -n "$BING_WEBMASTER_API_KEY" ]; then args+=(--bing --bing-budget "$INPUT_BING_BUDGET"); fi
+        if [ -n "$INPUT_BING_SITE" ]; then args+=(--bing-site "$INPUT_BING_SITE"); fi
 
         status=0
         node "$GITHUB_ACTION_PATH/bin/index-drift.js" "${args[@]}" || status=$?

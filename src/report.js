@@ -34,7 +34,25 @@ export function sections(result, { limit = 10 } = {}) {
   if (result.errors.length) {
     out.push({ title: "Inspection errors", warn: true, items: result.errors.map((e) => `${e.url}: ${e.error}`) });
   }
+  if (result.bing) out.push(...bingSections(result));
   return out.map((s) => ({ ...s, count: s.items.length, shown: s.items.slice(0, limit) }));
+}
+
+function bingSections(result) {
+  const bing = result.bing;
+  const out = [];
+  const forgot = result.changes.filter((c) => c.type === "bingForgot");
+  if (bing.problems.length) out.push({ title: "Bing: sitemap problems", warn: true, items: bing.problems.map((p) => `${p.sitemap}: ${p.problem}`) });
+  if (forgot.length) out.push({ title: "Bing: forgot these pages", warn: true, items: forgot.map((c) => `${c.url} (last crawled ${c.from?.slice(0, 10) ?? "never"})`) });
+  if (bing.unknown.length) out.push({ title: "Bing: never seen", warn: true, items: bing.unknown });
+  if (bing.stale.length) {
+    out.push({
+      title: "Bing: not crawled in 30+ days",
+      items: bing.stale.sort((a, b) => (b.days ?? Infinity) - (a.days ?? Infinity)).map((s) => `${s.url} (${s.days === null ? "never crawled" : `${s.days} days`})`),
+    });
+  }
+  if (bing.errors.length) out.push({ title: "Bing: errors", warn: true, items: bing.errors.map((e) => `${e.url}: ${e.error}`) });
+  return out;
 }
 
 export function headline(result) {
@@ -46,6 +64,13 @@ export function headline(result) {
       (result.unchecked ? ` · ${fmt(result.unchecked)} not checked yet` : "") +
       (cycle > 1 ? ` · full pass every ${cycle} runs` : ""),
   ];
+  if (result.bing) {
+    const bing = result.bing;
+    lines.push(
+      `Bing (${bing.site}): ${fmt(bing.crawled)} of ${fmt(bing.checked)} checked were crawled · ${fmt(bing.unknown.length)} never seen` +
+        ` · checked ${fmt(bing.inspected)} this run${bing.quotaHit ? " · stopped at the Bing quota" : ""}`,
+    );
+  }
   if (result.removed) lines.push(`${fmt(result.removed)} URLs left the sitemaps since the last run`);
   return lines;
 }

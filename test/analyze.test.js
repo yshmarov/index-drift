@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canonicalOverride, compare, localeOf, sitemapProblems } from "../src/analyze.js";
 
-const indexed = { verdict: "PASS", coverageState: "Submitted and indexed", googleCanonical: "https://x.com/a/" };
-const crawledNotIndexed = { verdict: "NEUTRAL", coverageState: "Crawled - currently not indexed", googleCanonical: null };
+const indexed = { checkedAt: "2026-11-01", verdict: "PASS", coverageState: "Submitted and indexed", googleCanonical: "https://x.com/a/" };
+const crawledNotIndexed = { checkedAt: "2026-11-02", verdict: "NEUTRAL", coverageState: "Crawled - currently not indexed", googleCanonical: null };
 
 test("compare reports a URL that left the index", () => {
   assert.deepEqual(compare("https://x.com/a/", indexed, crawledNotIndexed), [

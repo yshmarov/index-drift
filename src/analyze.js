@@ -28,7 +28,7 @@ export function toRecord(result, checkedAt) {
 export const isIndexed = (record) => record?.verdict === "PASS";
 
 export function compare(url, previous, current) {
-  if (!previous) return [];
+  if (!previous?.checkedAt) return [];
   const changes = [];
   if (isIndexed(previous) && !isIndexed(current)) changes.push({ type: "dropped", url, from: previous.coverageState, to: current.coverageState });
   if (!isIndexed(previous) && isIndexed(current)) changes.push({ type: "indexed", url, from: previous.coverageState });
@@ -98,7 +98,7 @@ export function snapshot(urls, state) {
 
   for (const url of urls) {
     const record = state.urls[url];
-    if (!record) continue;
+    if (!record?.checkedAt) continue;
     checked++;
     if (isIndexed(record)) indexed++;
     else {
@@ -110,4 +110,38 @@ export function snapshot(urls, state) {
   }
 
   return { total: urls.length, checked, unchecked: urls.length - checked, indexed, reasons, overrides };
+}
+
+export function bingSnapshot(urls, state, now, { staleDays = 30 } = {}) {
+  const unknown = [];
+  const stale = [];
+  let checked = 0;
+  let crawled = 0;
+
+  for (const url of urls) {
+    const bing = state.urls[url]?.bing;
+    if (!bing) continue;
+    checked++;
+    if (!bing.discovered) unknown.push(url);
+    else if (!bing.lastCrawled) stale.push({ url, days: null });
+    else {
+      crawled++;
+      const days = Math.floor((now - Date.parse(bing.lastCrawled)) / DAY);
+      if (days >= staleDays) stale.push({ url, days });
+    }
+  }
+
+  return { total: urls.length, checked, unchecked: urls.length - checked, crawled, unknown, stale };
+}
+
+export function bingFeedProblems(feeds, now, { staleDays = 30 } = {}) {
+  if (!feeds.length) return [{ sitemap: "(none)", problem: "no sitemap submitted to Bing Webmaster Tools" }];
+  const problems = [];
+  for (const feed of feeds) {
+    const days = feed.lastCrawled ? Math.floor((now - Date.parse(feed.lastCrawled)) / DAY) : null;
+    if (feed.status && feed.status !== "Success") problems.push({ sitemap: feed.path, problem: `Bing status: ${feed.status}` });
+    if (days === null) problems.push({ sitemap: feed.path, problem: "never read by Bing" });
+    else if (days >= staleDays) problems.push({ sitemap: feed.path, problem: `last read by Bing ${days} days ago` });
+  }
+  return problems;
 }
