@@ -1,0 +1,41 @@
+{
+  "name": "index-drift",
+  "version": "0.1.0",
+  "description": "Track which of your sitemap URLs Google keeps, drops, or folds into another locale. Uses the Search Console URL Inspection API, rotates through the daily quota, and diffs every run.",
+  "type": "module",
+  "bin": {
+    "index-drift": "bin/index-drift.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "action.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "seo",
+    "google-search-console",
+    "url-inspection",
+    "indexing",
+    "index-coverage",
+    "sitemap",
+    "hreflang",
+    "canonical",
+    "github-action"
+  ],
+  "author": "Yaroslav Shmarov",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yshmarov/index-drift.git"
+  },
+  "homepage": "https://github.com/yshmarov/index-drift#readme",
+  "bugs": "https://github.com/yshmarov/index-drift/issues"
+}

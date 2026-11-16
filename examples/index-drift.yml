@@ -1,0 +1,48 @@
+# Copy to .github/workflows/index-drift.yml and add the GSC_CREDENTIALS secret.
+# Each run commits the state file, so `git log -p .index-drift/` is your index history.
+name: Index drift
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency: index-drift
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: drift
+        uses: yshmarov/index-drift@v0
+        with:
+          site: sc-domain:example.com
+          credentials: ${{ secrets.GSC_CREDENTIALS }}
+
+      - name: Save results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .index-drift
+          git commit --quiet -m "Index check $(date -u +%F)" || exit 0
+          git push
+
+      - name: Report drops and sitemap problems in one issue
+        if: steps.drift.outputs.dropped != '0' || steps.drift.outputs.sitemap-problems != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.drift.outputs.report }}
+        run: |
+          gh label create index-drift --color 1d76db --force
+          issue=$(gh issue list --label index-drift --state open --json number --jq '.[0].number')
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body-file "$REPORT"
+          else
+            gh issue create --title "Google index drift" --label index-drift --body-file "$REPORT"
+          fi

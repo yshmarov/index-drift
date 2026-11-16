@@ -1,0 +1,5 @@
+node_modules/
+.index-drift/
+*.json.key
+service-account*.json
+.env

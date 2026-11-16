@@ -1,0 +1,78 @@
+name: index-drift
+description: Track which sitemap URLs Google keeps, drops, or folds into another locale, with the Search Console URL Inspection API.
+author: Yaroslav Shmarov
+branding:
+  icon: activity
+  color: blue
+
+inputs:
+  site:
+    description: "Search Console property: sc-domain:example.com or https://example.com/"
+    required: true
+  credentials:
+    description: Service account key JSON. Store it as a repository secret.
+    required: true
+  sitemaps:
+    description: Sitemap URLs, separated by spaces or new lines. Default is the sitemaps submitted in Search Console.
+    required: false
+    default: ""
+  state:
+    description: State file path. Default is .index-drift/<site>.json
+    required: false
+    default: ""
+  budget:
+    description: URLs to inspect in this run. Google allows 2,000 a day per property.
+    required: false
+    default: "2000"
+  fail-on-drop:
+    description: Fail the step when a URL dropped out of the index.
+    required: false
+    default: "false"
+
+outputs:
+  dropped:
+    description: URLs that dropped out of the index since their last check
+    value: ${{ steps.run.outputs.dropped }}
+  sitemap-problems:
+    description: Number of sitemap problems
+    value: ${{ steps.run.outputs.sitemap-problems }}
+  folded:
+    description: URLs Google folded into another locale
+    value: ${{ steps.run.outputs.folded }}
+  indexed:
+    description: Indexed URLs among the checked ones
+    value: ${{ steps.run.outputs.indexed }}
+  checked:
+    description: URLs with a saved inspection result
+    value: ${{ steps.run.outputs.checked }}
+  state:
+    description: Path of the state file
+    value: ${{ steps.run.outputs.state }}
+  report:
+    description: Path of the Markdown report
+    value: ${{ steps.run.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        GSC_CREDENTIALS: ${{ inputs.credentials }}
+        INPUT_SITE: ${{ inputs.site }}
+        INPUT_SITEMAPS: ${{ inputs.sitemaps }}
+        INPUT_STATE: ${{ inputs.state }}
+        INPUT_BUDGET: ${{ inputs.budget }}
+        INPUT_FAIL_ON_DROP: ${{ inputs.fail-on-drop }}
+      run: |
+        report="$RUNNER_TEMP/index-drift.md"
+        args=(--site "$INPUT_SITE" --budget "$INPUT_BUDGET" --report "$report")
+        if [ -n "$INPUT_STATE" ]; then args+=(--state "$INPUT_STATE"); fi
+        for sitemap in $INPUT_SITEMAPS; do args+=(--sitemap "$sitemap"); done
+        if [ "$INPUT_FAIL_ON_DROP" = "true" ]; then args+=(--fail-on-drop); fi
+
+        status=0
+        node "$GITHUB_ACTION_PATH/bin/index-drift.js" "${args[@]}" || status=$?
+        if [ -f "$report" ]; then cat "$report" >> "$GITHUB_STEP_SUMMARY"; fi
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+        exit $status
