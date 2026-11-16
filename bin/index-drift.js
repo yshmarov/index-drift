@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { accessToken, loadCredentials } from "../src/auth.js";
+import { accessToken, loadCredentials, userCredentialsPath } from "../src/auth.js";
 import { BingWebmaster, bingSiteFor } from "../src/bing.js";
 import { SearchConsole } from "../src/gsc.js";
+import { login, logout, readClientFile, saveUserCredentials } from "../src/oauth.js";
 import { markdownReport, terminalReport } from "../src/report.js";
 import { run } from "../src/run.js";
 import { defaultStatePath, loadState, saveState } from "../src/state.js";
 
 const HELP = `Usage: index-drift --site <property> [options]
+       index-drift login [--client <file>]
+       index-drift logout
 
 Checks every URL in your sitemaps with the Search Console URL Inspection API,
 saves the result, and reports what changed since the last run.
@@ -23,7 +26,8 @@ saves the result, and reports what changed since the last run.
   --json <file>         Also write the full result as JSON. Use - to print only JSON to stdout
   --limit <n>           URLs shown per section in the terminal. Default: 10
   --language <code>     Language of Google's messages, e.g. en-US. Default: en-US
-  --credentials <file>  Service account key. Default: GOOGLE_APPLICATION_CREDENTIALS or GSC_CREDENTIALS (JSON)
+  --credentials <file>  Service account key. Default: GSC_CREDENTIALS (JSON), GOOGLE_APPLICATION_CREDENTIALS,
+                        then your sign-in from index-drift login
   --fail-on-drop        Exit with code 2 when a URL dropped out of the Google index, or Bing forgot it
   --bing                Also check each URL in Bing Webmaster Tools (key in BING_WEBMASTER_API_KEY)
   --bing-site <url>     Bing site URL. Default: https://<domain>/ from --site
@@ -32,13 +36,16 @@ saves the result, and reports what changed since the last run.
                         (Bing, Yandex, Seznam, Naver; not Google). Or set INDEXNOW_KEY
   --indexnow-key-location <url>  Key file URL, if it is not at https://<host>/<key>.txt
   --skip-impressions    Do not look up which indexed pages got zero impressions in 90 days
+  --client <file>       With login: your own OAuth desktop client file instead of the built-in one
   -h, --help            Show this help
   -v, --version         Show the version
 `;
 
 async function main() {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
     options: {
+      client: { type: "string" },
       site: { type: "string" },
       sitemap: { type: "string", multiple: true, default: [] },
       state: { type: "string" },
@@ -66,6 +73,25 @@ async function main() {
     const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
     return void console.log(pkg.version);
   }
+  const [command] = positionals;
+  if (command === "login") {
+    const credentials = await login({ client: values.client ? await readClientFile(values.client) : undefined });
+    const path = userCredentialsPath();
+    await saveUserCredentials(credentials, path);
+    console.log(`Signed in. Saved to ${path}`);
+    if (process.env.GSC_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      console.log("GSC_CREDENTIALS or GOOGLE_APPLICATION_CREDENTIALS is set in this shell and is used before this sign-in.");
+    }
+    return 0;
+  }
+  if (command === "logout") {
+    console.log((await logout()) ? "Signed out." : "Not signed in.");
+    return 0;
+  }
+  if (command) {
+    process.stderr.write(`Unknown command: ${command}\n\n${HELP}`);
+    return 1;
+  }
   if (!values.site) {
     process.stderr.write(`Missing --site.\n\n${HELP}`);
     return 1;
@@ -77,7 +103,7 @@ async function main() {
   const budget = integer(values.budget, "--budget");
 
   const key = await loadCredentials({ file: values.credentials });
-  const gsc = new SearchConsole({ token: await accessToken(key), site });
+  const gsc = new SearchConsole({ token: await accessToken(key), site, serviceAccount: key.client_email });
   const state = await loadState(statePath, site);
 
   let bing;

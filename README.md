@@ -54,7 +54,16 @@ Sent to IndexNow (14)
 
 ## Setup
 
-The URL Inspection API needs a service account. API keys do not work.
+```sh
+npx index-drift login
+npx index-drift --site sc-domain:example.com
+```
+
+`login` opens your browser. Sign in with a Google account that can open the property in Search Console, and allow read-only access. The sign-in is saved on your computer in `~/.config/index-drift/credentials.json`. It is sent only to Google: index-drift has no server. `npx index-drift logout` deletes it and revokes it at Google. See [PRIVACY.md](PRIVACY.md).
+
+### Service account, for CI and servers
+
+GitHub Actions, cron jobs and servers cannot open a browser. Use a service account there.
 
 1. In [Google Cloud Console](https://console.cloud.google.com/), create a project (or use one you have) and enable the **Google Search Console API**.
 2. Create a **service account** and download a JSON key for it.
@@ -65,6 +74,12 @@ The URL Inspection API needs a service account. API keys do not work.
 export GOOGLE_APPLICATION_CREDENTIALS=path/to/key.json
 npx index-drift --site sc-domain:example.com
 ```
+
+index-drift uses, in this order: `--credentials <file>`, `GSC_CREDENTIALS` (the key JSON), `GOOGLE_APPLICATION_CREDENTIALS`, then your `login`.
+
+### Your own sign-in client
+
+If your company does not allow third-party apps on its Google accounts, create an OAuth client of type **Desktop app** in your own Google Cloud project, download its JSON, and run `npx index-drift login --client client.json`.
 
 **Property names.** A domain property is `sc-domain:example.com`. A URL-prefix property is `https://example.com/` with the trailing slash. Use the exact form Search Console shows. The wrong form returns 403.
 
@@ -80,7 +95,7 @@ npx index-drift --site sc-domain:example.com
 --json <file>         Also write the full result as JSON. Use - to print only JSON to stdout
 --limit <n>           URLs shown per section in the terminal. Default: 10
 --language <code>     Language of Google's messages. Default: en-US
---credentials <file>  Service account key. Default: GOOGLE_APPLICATION_CREDENTIALS, or the key JSON in GSC_CREDENTIALS
+--credentials <file>  Service account key. Default: GSC_CREDENTIALS, GOOGLE_APPLICATION_CREDENTIALS, then your login
 --fail-on-drop        Exit with code 2 when a URL dropped out of the Google index, or Bing forgot it
 --skip-impressions    Do not look up which indexed pages got zero impressions
 --bing                Also check each URL in Bing Webmaster Tools (key in BING_WEBMASTER_API_KEY)

@@ -6,9 +6,10 @@ const SITES_URL = "https://www.googleapis.com/webmasters/v3/sites";
 export { QuotaExhausted };
 
 export class SearchConsole {
-  constructor({ token, site, fetch = globalThis.fetch, sleep = defaultSleep, retries = 3 }) {
+  constructor({ token, site, serviceAccount, fetch = globalThis.fetch, sleep = defaultSleep, retries = 3 }) {
     this.token = token;
     this.site = site;
+    this.serviceAccount = serviceAccount;
     this.fetch = fetch;
     this.sleep = sleep;
     this.retries = retries;
@@ -46,6 +47,13 @@ export class SearchConsole {
     }
   }
 
+  #accessHint() {
+    const who = this.serviceAccount
+      ? `add ${this.serviceAccount} as a user of ${this.site} in Search Console (Settings → Users and permissions)`
+      : `check that the Google account you signed in with can open ${this.site} in Search Console`;
+    return `${who}. Domain properties use the sc-domain:example.com form.`;
+  }
+
   async #sitemapList(sitemapIndex) {
     const query = sitemapIndex ? `?sitemapIndex=${encodeURIComponent(sitemapIndex)}` : "";
     const body = await this.#request(`${SITES_URL}/${encodeURIComponent(this.site)}/sitemaps${query}`);
@@ -70,9 +78,8 @@ export class SearchConsole {
         await this.sleep(2 ** attempt * 15_000);
         continue;
       }
-      // A 429 that survives a minute of backoff is the daily quota, not the per-minute one.
       if (response.status === 429) throw new QuotaExhausted(message);
-      if (response.status === 403) throw new Error(`${message} — check that the service account is a user on ${this.site} (domain properties use the sc-domain:example.com form).`);
+      if (response.status === 403) throw new Error(`${message} — ${this.#accessHint()}`);
       throw new Error(`Search Console API ${response.status}: ${message}`);
     }
   }

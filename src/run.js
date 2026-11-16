@@ -116,6 +116,7 @@ export async function run({
     queued: google.queued,
     budget,
     quotaHit: google.quotaHit,
+    quotaMessage: google.quotaMessage,
     stoppedOnErrors: google.stoppedOnErrors,
     removed: removed.length,
     changes,
@@ -149,6 +150,7 @@ async function sweep({ queue, concurrency, spacingMs, check, onProgress, checkpo
   const errors = [];
   let inspected = 0;
   let quotaHit = false;
+  let quotaMessage = null;
   let streak = 0;
 
   await pool(queue, concurrency, async (url) => {
@@ -160,7 +162,10 @@ async function sweep({ queue, concurrency, spacingMs, check, onProgress, checkpo
       onProgress(inspected, queue.length);
       if (inspected % checkpointEvery === 0) await checkpoint();
     } catch (error) {
-      if (error instanceof QuotaExhausted) quotaHit = true;
+      if (error instanceof QuotaExhausted) {
+        quotaHit = true;
+        quotaMessage = error.message;
+      }
       else {
         streak++;
         errors.push({ url, error: error.message });
@@ -168,7 +173,7 @@ async function sweep({ queue, concurrency, spacingMs, check, onProgress, checkpo
     }
   }, { spacingMs });
 
-  return { inspected, queued: queue.length, quotaHit, stoppedOnErrors: streak >= MAX_ERROR_STREAK, errors };
+  return { inspected, queued: queue.length, quotaHit, quotaMessage, stoppedOnErrors: streak >= MAX_ERROR_STREAK, errors };
 }
 
 // Google's URL Inspection API allows 600 requests a minute per property. Bing's GetUrlInfo throttles

@@ -67,7 +67,7 @@ export function headline(result) {
   const cycle = result.budget > 0 ? Math.ceil(result.total / result.budget) : null;
   const lines = [
     `${fmt(result.total)} URLs in sitemaps · ${fmt(result.indexed)} of ${fmt(result.checked)} checked are indexed (${pct}%)`,
-    `Inspected ${fmt(result.inspected)} this run${result.quotaHit ? " · stopped at the daily quota" : ""}${result.stoppedOnErrors ? " · stopped after 10 errors in a row" : ""}` +
+    `Inspected ${fmt(result.inspected)} this run${result.quotaHit ? ` · stopped by Google's quota (${result.quotaMessage}), next run continues` : ""}${result.stoppedOnErrors ? " · stopped after 10 errors in a row" : ""}` +
       (result.unchecked ? ` · ${fmt(result.unchecked)} not checked yet` : "") +
       (cycle > 1 ? ` · full pass every ${cycle} runs` : ""),
   ];
